@@ -36,6 +36,17 @@
  * You'll probably want to add stuff here.
  */
 
+// Helper Function declarations.
+vaddr_t get_first_level_bits(vaddr_t addr);
+vaddr_t get_second_level_bits(vaddr_t addr);
+vaddr_t get_third_level_bits(vaddr_t);
+
+
+// Insert, lookup, update page table function declarations.
+int insert_pte(struct addrspace *as, vaddr_t vaddr, paddr_t paddr);
+paddr_t lookup_pte(struct addrspace *as, vaddr_t v_ddr);
+int update_pte(struct addrspace *as, vaddr_t vaddr, paddr_t paddr);
+
 
 #include <machine/vm.h>
 

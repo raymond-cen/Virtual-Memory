@@ -59,6 +59,7 @@ struct addrspace {
         paddr_t as_stackpbase;
 #else
         /* Put stuff here for your VM system */
+        paddr_t ***pagetable;
 #endif
 };
 
