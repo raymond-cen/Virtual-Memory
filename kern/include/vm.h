@@ -37,9 +37,12 @@
  */
 
 // Helper Function declarations.
-vaddr_t get_first_level_bits(vaddr_t addr);
-vaddr_t get_second_level_bits(vaddr_t addr);
-vaddr_t get_third_level_bits(vaddr_t);
+vaddr_t get_first_level_bits(vaddr_t vaddr);
+vaddr_t get_second_level_bits(vaddr_t vaddr);
+vaddr_t get_third_level_bits(vaddr_t vaddr);
+
+struct region *get_region(struct addrspace *as, vaddr_t vaddr);
+
 
 
 // Insert, lookup, update page table function declarations.
