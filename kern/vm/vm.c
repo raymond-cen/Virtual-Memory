@@ -13,20 +13,34 @@
 
 // Helper Functions
 
-vaddr_t get_first_level_bits(vaddr_t addr) {
-    return addr >> 24;
+vaddr_t get_first_level_bits(vaddr_t vaddr) {
+    return vaddr >> 24;
 }
 
-vaddr_t get_second_level_bits(vaddr_t addr) {
-    addr << 8;
-    return addr >> 26;
+vaddr_t get_second_level_bits(vaddr_t vaddr) {
+    vaddr << 8;
+    return vaddr >> 26;
 }   
 
-vaddr_t get_third_level_bits(vaddr_t addr) {
-    addr << 14;
-    return addr >> 26;
+vaddr_t get_third_level_bits(vaddr_t vaddr) {
+    vaddr << 14;
+    return vaddr >> 26;
 }
 
+// Gets region 
+// If the address is within the region, return that region.
+// Returns NULL otherwise.
+struct region *get_region(struct addrspace *as, vaddr_t vaddr) {
+    struct region *curr = as->as_regions;
+
+    while (curr != NULL) {
+        if (vaddr >= curr->vbase && vaddr < curr->vbase + curr->sz) {
+            return curr;
+        }
+        curr = curr->next;
+    }
+    return NULL;
+}
 
 void vm_bootstrap(void)
 {
@@ -137,19 +151,100 @@ int update_pte(struct addrspace *as, vaddr_t vaddr, paddr_t paddr) {
 int
 vm_fault(int faulttype, vaddr_t faultaddress)
 {
-    (void) faulttype;
-    (void) faultaddress;
+    // Returns EFAULT if faulttype is VM_FAULT_READONLY.
+    switch(faulttype) {
+        case VM_FAULT_READ:
+        case VM_FAULT_WRITE:
+            break;
+        case VM_FAULT_READONLY:
+            return EFAULT;
+        default:
+            return EINVAL;
+    }
 
-    panic("vm_fault hasn't been written yet\n");
+    if (curproc == NULL) {
+		/*
+		 * No process. This is probably a kernel fault early
+		 * in boot. Return EFAULT so as to panic instead of
+		 * getting into an infinite faulting loop.
+		 */
+		return EFAULT;
+	}
 
-    return EFAULT;
+    if (faultaddress == 0) {
+        return EFAULT;
+    }
+
+    struct addrspace *as = proc_getas()
+    if (as == NULL) {
+        return EFAULT;
+    }
+
+    paddr_t ***as_pagetable = as->pagetable;
+
+    // Get bits.
+    uint32_t p1_bits = get_first_level_bits(faultaddress);
+    uint32_t p2_bits = get_second_level_bits(faultaddress);
+    uint32_t p3_bits = get_third_level_bits(faultaddress);
+
+    // Returns error if pagetable index is out of bounds.
+    if (p1_bits >= 256 || p2_bits >= 64 || p3_bits >= 64) {
+        return ERANGE;
+    }
+
+    // Gets region.
+    struct region *region = get_region(as, faultaddress);
+    if (region == NULL) {
+        return EFAULT;
+    }
+    // Checks for correct bits.
+    switch (faulttype) {
+        case VM_FAULT_READ:
+            if (region->readable == 0) {
+                return EPERM;
+            }
+        case VM_FAULT_WRITE:
+            if (region->writeable == 0) {
+                return EPERM;
+            }
+        default:
+            return EINVAL;
+    }
+
+    // Lookup PT and load tlb if translation found.
+    if (lookup_pte(as, faultaddress) != 0) {
+        int sql = splhigh();
+        tlb_random(faultaddress & PAGE_FRAME, as_pagetable[p1_bits][p2_bits][p3_bits]);
+        splx(sql);
+        return 0;
+    }
+
+    // Allocate frame, zero-fill and insert pte.
+    vaddr_t vaddr = alloc_kpages(1);
+    if (vaddr == 0) {
+        return ENOMEM;
+    }
+    bzero((void *)vaddr, PAGE_SIZE);
+    paddr_t paddr = KVADDR_TO_PADDR(vaddr) & PAGE_FRAME;
+
+    if (region->writeable != 0) {
+        paddr = paddr | TLBLO_DIRTY;
+    }
+    
+    paddr = paddr | TLBLO_VALID;
+
+    int ret = insert_pte(as, faultaddress, paddr);
+    if (ret != 0) {
+        return ret;
+    }
+
+    // Load tlb.
+    int sql = splhigh();
+    tlb_random(faultaddress & PAGE_FRAME, as_pagetable[p1_bits][p2_bits][p3_bits]);
+    splx(sql);
+    return 0;
+    
 }
-
-
-
-
-
-
 
 /*
  * SMP-specific functions.  Unused in our UNSW configuration.
@@ -162,3 +257,23 @@ vm_tlbshootdown(const struct tlbshootdown *ts)
 	panic("vm tried to do tlb shootdown?!\n");
 }
 
+
+void vm_freePTE(paddr_t ***pte)
+{
+    for (int i = 0; i < PAGETABLE_SIZE; i ++) {
+        if (pte[i] == NULL) continue;
+
+        for (int j = 0; j < PAGETABLE_SIZE; j ++) {
+			if (pte[i][j] == NULL) continue;
+			for (int k = 0; k < PAGETABLE_SIZE; k++) {
+				if (pte[i][j][k] != 0) {
+					free_kpages(PADDR_TO_KVADDR(pte[i][j][k] & PAGE_FRAME));
+				} 
+			}
+            kfree(pte[i][j])
+        }
+        kfree(pte[i]);
+    }
+    kfree(pte); // Free page table entry
+    // panic("vm: vm_freePTE DONE\n");
+}

@@ -30,16 +30,20 @@
 #ifndef _VM_H_
 #define _VM_H_
 
+#include <addrspace.h>
 /*
  * VM system-related definitions.
  *
  * You'll probably want to add stuff here.
  */
-
+struct addrspace *as;
 // Helper Function declarations.
-vaddr_t get_first_level_bits(vaddr_t addr);
-vaddr_t get_second_level_bits(vaddr_t addr);
-vaddr_t get_third_level_bits(vaddr_t);
+vaddr_t get_first_level_bits(vaddr_t vaddr);
+vaddr_t get_second_level_bits(vaddr_t vaddr);
+vaddr_t get_third_level_bits(vaddr_t vaddr);
+
+struct region *get_region(struct addrspace *as, vaddr_t vaddr);
+
 
 
 // Insert, lookup, update page table function declarations.
@@ -69,5 +73,6 @@ void free_kpages(vaddr_t addr);
 /* TLB shootdown handling called from interprocessor_interrupt */
 void vm_tlbshootdown(const struct tlbshootdown *);
 
+void vm_freePTE(paddr_t ***pte);
 
 #endif /* _VM_H_ */
