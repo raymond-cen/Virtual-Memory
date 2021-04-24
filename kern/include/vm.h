@@ -36,6 +36,8 @@
  *
  * You'll probably want to add stuff here.
  */
+#define USER_STACK_SIZE 16 * PAGE_SIZE
+
 struct addrspace *as;
 // Helper Function declarations.
 vaddr_t get_first_level_bits(vaddr_t vaddr);

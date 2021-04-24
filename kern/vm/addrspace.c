@@ -109,6 +109,7 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 		temp->sz = old_region->sz;
 		temp->readable = old_region->readable;
 		temp->writeable = old_region->writeable;
+		temp->writeable_prev = old_region->writeable_prev;
 		// temp->old_writeable = old->old_writeable;
 		temp->executable = old_region->executable;
 		temp->next = NULL;
@@ -247,6 +248,31 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t memsize,
 	/*
 	 * Write this.
 	 */
+	if (as == NULL) {
+		return EFAULT;
+	}
+	if (vaddr + memsize >= USERSTACK) {
+		return ENOMEM;
+	} 
+	/* Align the region. First, the base... */
+	memsize += vaddr & ~(vaddr_t)PAGE_FRAME;
+	vaddr &= PAGE_FRAME;
+
+	/* ...and now the length. */
+	memsize = (memsize + PAGE_SIZE - 1) & PAGE_FRAME;
+
+	struct region *new = kmalloc(sizeof(struct region));
+	if (new == NULL) {
+		return ENOMEM;
+	}
+	new->vbase = vaddr;
+	new->sz = memsize;
+	new->readable = readable;
+	new->writeable = writeable;
+	new->executable = executable;
+
+	new->next = as->as_regions;
+	as->as_regions = new;
 
 	(void)as;
 	(void)vaddr;
@@ -254,7 +280,7 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t memsize,
 	(void)readable;
 	(void)writeable;
 	(void)executable;
-	return ENOSYS; /* Unimplemented */
+	return 0;
 }
 
 int
@@ -265,6 +291,7 @@ as_prepare_load(struct addrspace *as)
 	 */
 	struct region *curr = as->as_regions;
 	while (curr != NULL) { // change readonly to rw
+		curr->writeable_prev = curr->writeable;
 		curr->writeable = 1;
 		curr = curr->next;
 	}
@@ -279,7 +306,20 @@ as_complete_load(struct addrspace *as)
 	/*
 	 * Write this.
 	 */
-
+	if (as == NULL) {
+		return EFAULT;
+	}
+	struct region *curr = as->as_regions;
+	while (curr != NULL) {
+		// set permissions back to old one
+		curr->writeable = curr->writeable_prev;
+		curr = curr->next;
+	}
+	int spl = splhigh();
+	for (int i = 0; i<NUM_TLB; i++) {
+		tlb_write(TLBHI_INVALID(i), TLBLO_INVALID(), i);
+	} 
+	splx(spl);
 	(void)as;
 	return 0;
 }
@@ -290,11 +330,13 @@ as_define_stack(struct addrspace *as, vaddr_t *stackptr)
 	/*
 	 * Write this.
 	 */
-
+	if (as == NULL) {
+		return EFAULT;
+	}
 	(void)as;
 
 	/* Initial user-level stack pointer */
 	*stackptr = USERSTACK;
-
-	return 0;
+	// read write to 1, exectuable to 0
+	return as_define_region(as, *stackptr - USER_STACK_SIZE, USER_STACK_SIZE, 1, 1, 0);
 }

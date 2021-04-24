@@ -68,6 +68,7 @@ struct region {
         size_t sz;
         int readable;
         int writeable;
+        int writeable_prev;
         int executable;
         struct region *next;
 };
