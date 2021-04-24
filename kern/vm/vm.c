@@ -18,12 +18,12 @@ vaddr_t get_first_level_bits(vaddr_t vaddr) {
 }
 
 vaddr_t get_second_level_bits(vaddr_t vaddr) {
-    vaddr << 8;
+    vaddr = vaddr << 8;
     return vaddr >> 26;
 }   
 
 vaddr_t get_third_level_bits(vaddr_t vaddr) {
-    vaddr << 14;
+    vaddr = vaddr << 14;
     return vaddr >> 26;
 }
 
@@ -34,7 +34,7 @@ struct region *get_region(struct addrspace *as, vaddr_t vaddr) {
     struct region *curr = as->as_regions;
 
     while (curr != NULL) {
-        if (vaddr >= curr->vbase && vaddr < curr->vbase + curr->sz) {
+        if (vaddr >= curr->vbase && (vaddr < (curr->vbase + curr->sz))) {
             return curr;
         }
         curr = curr->next;
@@ -78,7 +78,7 @@ int insert_pte(struct addrspace *as, vaddr_t vaddr, paddr_t paddr) {
         }
 
         // Set non-leaf nodes to NULL.
-        for (int i = 0; i < 64, i++) {
+        for (int i = 0; i < 64; i++) {
             as->pagetable[p1_bits][i] = NULL;
         }
     }
@@ -134,7 +134,7 @@ paddr_t lookup_pte(struct addrspace *as, vaddr_t vaddr) {
  * Returns 0 upon sucess.
  */
 int update_pte(struct addrspace *as, vaddr_t vaddr, paddr_t paddr) {
-    paddr_t ret = lookup_pte(as, vaddr, paddr);
+    paddr_t ret = lookup_pte(as, vaddr);
     if (ret == EINVAL) {
         return EINVAL;
     }
@@ -157,6 +157,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
         case VM_FAULT_WRITE:
             break;
         case VM_FAULT_READONLY:
+        panic("VM_READONLY\n");
             return EFAULT;
         default:
             return EINVAL;
@@ -168,15 +169,18 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 		 * in boot. Return EFAULT so as to panic instead of
 		 * getting into an infinite faulting loop.
 		 */
+        panic("no curproc\n");
 		return EFAULT;
 	}
 
     if (faultaddress == 0) {
+        panic("faultaddress = 0\n");
         return EFAULT;
     }
 
-    struct addrspace *as = proc_getas()
+    struct addrspace *as = proc_getas();
     if (as == NULL) {
+        panic("as == NULL");
         return EFAULT;
     }
 
@@ -192,9 +196,11 @@ vm_fault(int faulttype, vaddr_t faultaddress)
         return ERANGE;
     }
 
+    /*
     // Gets region.
     struct region *region = get_region(as, faultaddress);
     if (region == NULL) {
+        panic("REgion is null\n");
         return EFAULT;
     }
     // Checks for correct bits.
@@ -203,16 +209,41 @@ vm_fault(int faulttype, vaddr_t faultaddress)
             if (region->readable == 0) {
                 return EPERM;
             }
+            break;
         case VM_FAULT_WRITE:
             if (region->writeable == 0) {
                 return EPERM;
             }
+            break;
         default:
+            panic("not vm_fault read or write\n");
             return EINVAL;
     }
-
+    */
     // Lookup PT and load tlb if translation found.
     if (lookup_pte(as, faultaddress) != 0) {
+            // Gets region.
+        struct region *region = get_region(as, faultaddress);
+        if (region == NULL) {
+            panic("Faultaddress is not in region\n");
+            return EFAULT;
+        }
+        // Checks for correct bits.
+        switch (faulttype) {
+            case VM_FAULT_READ:
+                if (region->readable == 0) {
+                    return EPERM;
+                }
+                break;
+            case VM_FAULT_WRITE:
+                if (region->writeable == 0) {
+                    return EPERM;
+                }
+                break;
+            default:
+                panic("not vm_fault read or write\n");
+                return EINVAL;
+        }
         int sql = splhigh();
         tlb_random(faultaddress & PAGE_FRAME, as_pagetable[p1_bits][p2_bits][p3_bits]);
         splx(sql);
@@ -226,6 +257,29 @@ vm_fault(int faulttype, vaddr_t faultaddress)
     }
     bzero((void *)vaddr, PAGE_SIZE);
     paddr_t paddr = KVADDR_TO_PADDR(vaddr) & PAGE_FRAME;
+
+        // Gets region.
+    struct region *region = get_region(as, faultaddress);
+    if (region == NULL) {
+        panic("Faultaddress is not in region.\n");
+        return EFAULT;
+    }
+    // Checks for correct bits.
+    switch (faulttype) {
+        case VM_FAULT_READ:
+            if (region->readable == 0) {
+                return EPERM;
+            }
+            break;
+        case VM_FAULT_WRITE:
+            if (region->writeable == 0) {
+                return EPERM;
+            }
+            break;
+        default:
+            panic("not vm_fault read or write\n");
+            return EINVAL;
+    }
 
     if (region->writeable != 0) {
         paddr = paddr | TLBLO_DIRTY;
@@ -257,3 +311,23 @@ vm_tlbshootdown(const struct tlbshootdown *ts)
 	panic("vm tried to do tlb shootdown?!\n");
 }
 
+
+void vm_freePTE(paddr_t ***pte)
+{
+    for (int i = 0; i < 256; i ++) {
+        if (pte[i] == NULL) continue;
+
+        for (int j = 0; j < 64; j ++) {
+			if (pte[i][j] == NULL) continue;
+			for (int k = 0; k < 64; k++) {
+				if (pte[i][j][k] != 0) {
+					free_kpages(PADDR_TO_KVADDR(pte[i][j][k] & PAGE_FRAME));
+				} 
+			}
+            kfree(pte[i][j]);
+        }
+        kfree(pte[i]);
+    }
+    kfree(pte); // Free page table entry
+    // panic("vm: vm_freePTE DONE\n");
+}
