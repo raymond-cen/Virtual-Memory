@@ -76,5 +76,6 @@ void free_kpages(vaddr_t addr);
 void vm_tlbshootdown(const struct tlbshootdown *);
 
 void vm_freePTE(paddr_t ***pte);
-
+vaddr_t alloc_frame(void);
+int copyPTE(struct addrspace *old, struct addrspace *newas);
 #endif /* _VM_H_ */

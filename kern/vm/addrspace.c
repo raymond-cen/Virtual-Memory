@@ -52,28 +52,25 @@ struct addrspace *
 as_create(void)
 {
 	struct addrspace *as;
-
 	as = kmalloc(sizeof(struct addrspace));
 	if (as == NULL) {
 		return NULL;
 	}
-
 	/*
 	 * Initialize as needed.
 	 */
 	as->as_regions = NULL; /* region initialisation */
 	/* PD initialisation */
-	paddr_t ***pd = kmalloc(PAGETABLE_SIZE * 4);
+	paddr_t ***pd = (paddr_t ***)alloc_kpages(1);
 	if(pd == NULL) {
 		kfree(as);
 		return NULL;
 	}
-	as->pagetable = pd;
+	
 	for (int i = 0; i < PAGETABLE_SIZE; i++) {
-		for (int j = 0; j < PAGETABLE_SIZE; j++) {
-			pd[i][j] = NULL;
-		}
+		pd[i] = NULL;
 	}
+	as->pagetable = pd;
 	return as;
 }
 
@@ -84,6 +81,7 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 
 	newas = as_create();
 	if (newas==NULL) {
+		panic("newas allocate");
 		return ENOMEM;
 	}
 
@@ -93,8 +91,6 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 	if (old == NULL) {
 		return EINVAL;
 	}
-
-	(void)old;
 	struct region *old_region = old->as_regions;
 	struct region *new_region = newas->as_regions;
 
@@ -110,7 +106,6 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 		temp->readable = old_region->readable;
 		temp->writeable = old_region->writeable;
 		temp->writeable_prev = old_region->writeable_prev;
-		// temp->old_writeable = old->old_writeable;
 		temp->executable = old_region->executable;
 		temp->next = NULL;
 
@@ -122,50 +117,10 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 		new_region = temp;
 		old_region = old_region->next;
 	}
-
-	for (int i = 0; i < PAGETABLE_SIZE; i++) {
-		if (old->pagetable[i] == NULL) {
-			newas->pagetable[i] = NULL;
-			continue;
-		} 
-		newas->pagetable[i] = kmalloc(PAGETABLE_SIZE * 4);
-		if (newas->pagetable[i] == NULL) {
-			as_destroy(newas);
-			return ENOMEM;
-		}
-		for (int j = 0; j < PAGETABLE_SIZE; j++) {
-			if (old->pagetable[i][j] == NULL) {
-				newas->pagetable[i][j] = NULL;
-				continue;
-			} 
-			newas->pagetable[i][j] = kmalloc(PAGETABLE_SIZE * 4);
-			if (newas->pagetable[i][j] == NULL) {
-				as_destroy(newas);
-				return ENOMEM;
-			}
-			for (int k = 0; k < PAGETABLE_SIZE; k++) {
-				if (old->pagetable[i][j][k] == 0) {
-					newas->pagetable[i][j][k] = 0;
-				} else {
-					vaddr_t newframe = alloc_kpages(1);
-					if (newframe == 0) {
-						as_destroy(newas);
-						return ENOMEM; // Out of memory
-					} 
-					bzero((void *)newframe, PAGE_SIZE);
-					// copy bytes
-					if (memmove((void *)newframe, (const void *)PADDR_TO_KVADDR(old->pagetable[i][j][k] & PAGE_FRAME)
-						, PAGE_SIZE) == NULL) { // fail memmove()
-						vm_freePTE(newas->pagetable);
-						as_destroy(newas);
-						return ENOMEM; // Out of memory
-					}
-					newas->pagetable[i][j][k] = (KVADDR_TO_PADDR(newframe) & PAGE_FRAME) | 
-					(TLBLO_DIRTY & old->pagetable[i][j][k]) | (TLBLO_VALID & old->pagetable[i][j][k]);
-				}
-			}
-		}
-		
+	int result = copyPTE(as, newas);
+	if (result) {
+		as_destroy(newas);
+		return result;
 	}
 
 	*ret = newas;
@@ -188,8 +143,11 @@ as_destroy(struct addrspace *as)
 		head = head->next;
 		kfree(temp);
 	}
+	as->as_regions = NULL;
 	vm_freePTE(as->pagetable);
+	as->pagetable = NULL;
 	kfree(as);
+	as = NULL;
 }
 
 void
@@ -263,6 +221,7 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t memsize,
 
 	struct region *new = kmalloc(sizeof(struct region));
 	if (new == NULL) {
+		panic("region allocate");
 		return ENOMEM;
 	}
 	new->vbase = vaddr;
@@ -273,7 +232,7 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t memsize,
 
 	new->next = as->as_regions;
 	as->as_regions = new;
-
+	
 	(void)as;
 	(void)vaddr;
 	(void)memsize;
