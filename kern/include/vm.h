@@ -27,8 +27,8 @@
  * SUCH DAMAGE.
  */
 
-#ifndef _VM_H_
-#define _VM_H_
+#ifndef VM_H
+#define VM_H
 
 #include <addrspace.h>
 /*
@@ -40,18 +40,9 @@
 
 struct addrspace *as;
 // Helper Function declarations.
-vaddr_t get_first_level_bits(vaddr_t vaddr);
-vaddr_t get_second_level_bits(vaddr_t vaddr);
-vaddr_t get_third_level_bits(vaddr_t vaddr);
-
-struct region *get_region(struct addrspace *as, vaddr_t vaddr);
-
-
-
-// Insert, lookup, update page table function declarations.
-int insert_pte(struct addrspace *as, vaddr_t vaddr, paddr_t paddr);
-paddr_t lookup_pte(struct addrspace *as, vaddr_t v_ddr);
-int update_pte(struct addrspace *as, vaddr_t vaddr, paddr_t paddr);
+paddr_t get_first_level_bits(vaddr_t vaddr);
+paddr_t get_second_level_bits(vaddr_t vaddr);
+paddr_t get_third_level_bits(vaddr_t vaddr);
 
 
 #include <machine/vm.h>
@@ -76,5 +67,9 @@ void free_kpages(vaddr_t addr);
 void vm_tlbshootdown(const struct tlbshootdown *);
 
 void vm_freePTE(paddr_t ***pte);
-
-#endif /* _VM_H_ */
+vaddr_t alloc_frame(void);
+int copyPTE(struct addrspace *old, struct addrspace *newas);
+int vm_initPT(paddr_t ***oldPTE, vaddr_t vaddr);
+int vm_addPTE(paddr_t ***oldPTE, vaddr_t faultaddress, uint32_t dirty);
+int lookup_region(struct addrspace *as, vaddr_t vaddr, int faulttype);
+#endif /* VM_H */
