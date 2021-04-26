@@ -27,8 +27,8 @@
  * SUCH DAMAGE.
  */
 
-#ifndef _ADDRSPACE_H_
-#define _ADDRSPACE_H_
+#ifndef ADDRSPACE_H
+#define ADDRSPACE_H
 #define PAGETABLE_SIZE 256
 #define PAGETABLE_SIZE_2 64
 #define PAGETABLE_SIZE_3 64
@@ -110,7 +110,7 @@ struct region {
  *                is complete.
  *
  *    as_define_stack - set up the stack region in the address space.
- *                (Normally called *after* as_complete_load().) Hands
+ *                (Normally called after as_complete_load().) Hands
  *                back the initial stack pointer for the new process.
  *
  * Note that when using dumbvm, addrspace.c is not used and these
@@ -143,4 +143,4 @@ int               as_define_stack(struct addrspace *as, vaddr_t *initstackptr);
 int load_elf(struct vnode *v, vaddr_t *entrypoint);
 
 
-#endif /* _ADDRSPACE_H_ */
+#endif /* ADDRSPACE_H */

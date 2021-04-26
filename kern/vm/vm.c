@@ -291,4 +291,3 @@ int lookup_region(struct addrspace *as, vaddr_t vaddr, int faulttype) {
 
     return 0;
 }
-

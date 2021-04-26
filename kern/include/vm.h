@@ -27,8 +27,8 @@
  * SUCH DAMAGE.
  */
 
-#ifndef _VM_H_
-#define _VM_H_
+#ifndef VM_H
+#define VM_H
 
 #include <addrspace.h>
 /*
@@ -72,4 +72,4 @@ int copyPTE(struct addrspace *old, struct addrspace *newas);
 int vm_initPT(paddr_t ***oldPTE, vaddr_t vaddr);
 int vm_addPTE(paddr_t ***oldPTE, vaddr_t faultaddress, uint32_t dirty);
 int lookup_region(struct addrspace *as, vaddr_t vaddr, int faulttype);
-#endif /* _VM_H_ */
+#endif /* VM_H */
