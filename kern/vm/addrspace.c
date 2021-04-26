@@ -299,9 +299,4 @@
      *stackptr = USERSTACK;
      // read write to 1, exectuable to 0
      return as_define_region(as, *stackptr - USER_STACK_SIZE, USER_STACK_SIZE, 1, 1, 0);
-<<<<<<< HEAD
  }
- 
-=======
- }
->>>>>>> vm.c
