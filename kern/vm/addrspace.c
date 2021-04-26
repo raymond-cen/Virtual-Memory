@@ -64,6 +64,7 @@
      paddr_t ***pd = (paddr_t ***)alloc_kpages(1);
      if(pd == NULL) {
          kfree(as);
+         as = NULL;
          return NULL;
      }
      

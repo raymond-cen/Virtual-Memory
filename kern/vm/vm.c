@@ -213,7 +213,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
         new = true;
     }
     if (as_pagetable[p1_bits][p2_bits] == NULL) {
-        as_pagetable[p1_bits][p2_bits] = kmalloc(sizeof(paddr_t) * PAGETABLE_SIZE2);
+        as_pagetable[p1_bits][p2_bits] = (paddr_t*)kmalloc(sizeof(paddr_t) * PAGETABLE_SIZE2);
         if (as_pagetable[p1_bits][p2_bits] == NULL) {
             kfree(as_pagetable[p1_bits][p2_bits]);
             as_pagetable[p1_bits][p2_bits] = NULL;
@@ -366,7 +366,7 @@ vm_tlbshootdown(const struct tlbshootdown *ts)
 
 void vm_freePTE(paddr_t ***pte)
 {
-    for (int i = 0; i < 256; i++) {
+    for (int i = 0; i < 128; i++) {
         if (pte[i] == NULL) continue;
 
         for (int j = 0; j < 64; j ++) {
@@ -414,14 +414,15 @@ int copyPTE(struct addrspace *old, struct addrspace *newas) {
 				return ENOMEM;
 			}
 			for (int k = 0; k < PAGETABLE_SIZE2; k++) {
-				if (old->pagetable[i][j][k] == 0) {
-					newas->pagetable[i][j][k] = 0;
-				} else {
-					vaddr_t newframe = alloc_kpages(1);
+				if (old->pagetable[i][j][k]) {
+					vaddr_t newframe = alloc_frame();
 					if (newframe == 0) {
 						return ENOMEM; // Out of memory
 					}
-                    memmove((void *)newframe, (const void *)PADDR_TO_KVADDR(old->pagetable[i][j][k] & PAGE_FRAME), PAGE_SIZE);
+                    if (memmove((void *)newframe, (const void *)PADDR_TO_KVADDR(old->pagetable[i][j][k] & PAGE_FRAME), PAGE_SIZE) == NULL) {
+                        vm_freePTE(newas->pagetable);
+                        return ENOMEM;
+                    }
                     newas->pagetable[i][j][k] = (KVADDR_TO_PADDR(newframe) & PAGE_FRAME) | (old->pagetable[i][j][k] & TLBLO_DIRTY) | TLBLO_VALID;
 					// bzero((void *)newframe, PAGE_SIZE);
 					// // copy bytes
@@ -432,6 +433,8 @@ int copyPTE(struct addrspace *old, struct addrspace *newas) {
 					// }
 					// newas->pagetable[i][j][k] = (KVADDR_TO_PADDR(newframe) & PAGE_FRAME) | 
 					// (TLBLO_DIRTY & old->pagetable[i][j][k]) | (TLBLO_VALID & old->pagetable[i][j][k]);
+				} else {
+                    newas->pagetable[i][j][k] = 0;
 				}
 			}
 		}
@@ -446,10 +449,10 @@ int vm_initPT(paddr_t ***oldPTE, vaddr_t vaddr)
     uint32_t p1_bits = get_first_level_bits(vaddr);
     // uint32_t p2_bits = get_second_level_bits(vaddr);
     
-    oldPTE[p1_bits] = kmalloc(sizeof(paddr_t) * PAGETABLE_SIZE);
+    oldPTE[p1_bits] = (paddr_t**)kmalloc(sizeof(paddr_t) * PAGETABLE_SIZE2);
     if (oldPTE[p1_bits] == NULL) return ENOMEM;
 
-    for (int i = 0; i < PAGETABLE_SIZE; i++) {
+    for (int i = 0; i < PAGETABLE_SIZE2; i++) {
         oldPTE[p1_bits][i] = NULL;
     }
     // oldPTE[p1_bits][p2_bits] = kmalloc(sizeof(paddr_t) * PAGETABLE_SIZE2);
@@ -473,7 +476,6 @@ int vm_addPTE(paddr_t ***oldPTE, vaddr_t faultaddress, uint32_t dirty)
     paddr_t pbase = KVADDR_TO_PADDR(vbase);
     bzero((void *)PADDR_TO_KVADDR(pbase), PAGE_SIZE);
     
-
     oldPTE[p1_bits][p2_bits][p3_bits] = (pbase & PAGE_FRAME) | dirty | TLBLO_VALID;
     // panic("vm: vm_addPTE DONE\n");
     return 0;
