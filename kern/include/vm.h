@@ -44,15 +44,6 @@ paddr_t get_first_level_bits(vaddr_t vaddr);
 paddr_t get_second_level_bits(vaddr_t vaddr);
 paddr_t get_third_level_bits(vaddr_t vaddr);
 
-struct region *get_region(struct addrspace *as, vaddr_t vaddr);
-
-
-
-// Insert, lookup, update page table function declarations.
-int insert_pte(struct addrspace *as, vaddr_t vaddr, paddr_t paddr);
-paddr_t lookup_pte(struct addrspace *as, vaddr_t v_ddr);
-int update_pte(struct addrspace *as, vaddr_t vaddr, paddr_t paddr);
-
 
 #include <machine/vm.h>
 
@@ -81,5 +72,4 @@ int copyPTE(struct addrspace *old, struct addrspace *newas);
 int vm_initPT(paddr_t ***oldPTE, vaddr_t vaddr);
 int vm_addPTE(paddr_t ***oldPTE, vaddr_t faultaddress, uint32_t dirty);
 int lookup_region(struct addrspace *as, vaddr_t vaddr, int faulttype);
-int probe_pt(struct addrspace *as, vaddr_t vaddr);
 #endif /* _VM_H_ */

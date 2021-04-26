@@ -30,7 +30,8 @@
 #ifndef _ADDRSPACE_H_
 #define _ADDRSPACE_H_
 #define PAGETABLE_SIZE 256
-#define PAGETABLE_SIZE2 64
+#define PAGETABLE_SIZE_2 64
+#define PAGETABLE_SIZE_3 64
 /*
  * Address space structure and operations.
  */

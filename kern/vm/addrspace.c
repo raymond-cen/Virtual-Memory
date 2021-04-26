@@ -82,7 +82,7 @@
  
      newas = as_create();
      if (newas==NULL) {
-         panic("newas allocate");
+        //  panic("newas allocate");
          return ENOMEM;
      }
  
@@ -99,7 +99,6 @@
          struct region *temp = kmalloc(sizeof(struct region));
          if (temp == NULL) {
              as_destroy(newas);
-             panic("tempregion allocate");
              return ENOMEM;
          }
          // copy regions
@@ -135,9 +134,7 @@
      if (as == NULL) {
          return;
      }
-     /*
-      * Clean up as needed.
-      */
+
      struct region *temp = NULL;
      struct region *head = as->as_regions;
      while (head != NULL) {
@@ -146,10 +143,6 @@
          kfree(temp);
      }
     
-    //  if (temp != NULL) {
-    //     kfree(temp);
-    //     temp = NULL;
-    //  }
     as->as_regions = NULL; 
     vm_freePTE(as -> pagetable);
     as->pagetable = NULL;
@@ -216,10 +209,7 @@
      if (as == NULL) {
          return EFAULT;
      }
-     // if (vaddr + memsize >= USERSTACK) {
-     // 	panic("stack allocate");
-     // 	return ENOMEM;
-     // } 
+
      /* Align the region. First, the base... */
      memsize += vaddr & ~(vaddr_t)PAGE_FRAME;
      vaddr &= PAGE_FRAME;
@@ -243,8 +233,6 @@
  
 	new -> next = as -> as_regions;
 	as -> as_regions = new;
-    //  new->next = as->as_regions;
-    //  as->as_regions = new;
      
      (void)as;
      (void)vaddr;

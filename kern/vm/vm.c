@@ -13,35 +13,21 @@
 
 // Helper Functions
 
-vaddr_t get_first_level_bits(vaddr_t vaddr) {
+paddr_t get_first_level_bits(vaddr_t vaddr) {
     paddr_t pbase = KVADDR_TO_PADDR(vaddr);
     return pbase >> 24;
 }
 
-vaddr_t get_second_level_bits(vaddr_t vaddr) {
+paddr_t get_second_level_bits(vaddr_t vaddr) {
     paddr_t pbase = KVADDR_TO_PADDR(vaddr);
     pbase = pbase << 8;
     return pbase >> 26;
 }   
 
-vaddr_t get_third_level_bits(vaddr_t vaddr) {
+paddr_t get_third_level_bits(vaddr_t vaddr) {
     paddr_t pbase = KVADDR_TO_PADDR(vaddr);
     pbase = pbase << 14;
     return pbase >> 26;
-}
-
-// Gets region 
-// If the address is within the region, return that region.
-// Returns NULL otherwise.
-struct region *get_region(struct addrspace *as, vaddr_t vaddr) {
-    struct region *curr = as->as_regions;
-    while (curr != NULL) {
-        if (vaddr >= curr->vbase && (vaddr < (curr->vbase + curr->sz))) {
-            return curr;
-        }
-        curr = curr->next;
-    }
-    return NULL;
 }
 
 void vm_bootstrap(void)
@@ -51,102 +37,6 @@ void vm_bootstrap(void)
      * You may or may not need to add anything here depending what's
      * provided or required by the assignment spec.
      */
-}
-
-/* Inserts page table entry.
- * Returns 0 upon success.
- */
-int insert_pte(struct addrspace *as, vaddr_t vaddr, paddr_t paddr) {
-    uint32_t p1_bits = get_first_level_bits(vaddr);
-    uint32_t p2_bits = get_second_level_bits(vaddr);
-    uint32_t p3_bits = get_third_level_bits(vaddr);
-
-    // Returns error if pagetable index is out of bounds.
-    if (p1_bits >= 256 || p2_bits >= 64 || p3_bits >= 64) {
-        return ERANGE;
-    }
-
-    // Returns error if pagetable isn't created.
-    if (as->pagetable == NULL) {
-        return EINVAL;
-    }
-
-    if (as->pagetable[p1_bits] == NULL) {
-        as->pagetable[p1_bits] = kmalloc(sizeof(paddr_t) * PAGETABLE_SIZE);
-
-        // Returns error if kmalloc of pagetable lvl 2 fails.
-        if (as->pagetable[p1_bits] == NULL) {
-            return ENOMEM;
-        }
-         
-        // Set non-leaf nodes to NULL.
-        for (int i = 0; i < 64; i++) {
-            as->pagetable[p1_bits][i] = NULL;
-        }
-    }
-    if (as->pagetable[p1_bits][p2_bits] == NULL) {
-        as->pagetable[p1_bits][p2_bits] = kmalloc(sizeof(paddr_t) * PAGETABLE_SIZE2);
-
-        // Returns error if kmalloc of pagetable lvl 3 fails.
-        if (as->pagetable[p1_bits][p2_bits] == NULL) {
-            return ENOMEM;
-        }
-
-        // Set leaf nodes to 0.
-        for (int i = 0; i < 64; i++) {
-            as->pagetable[p1_bits][p2_bits][i] = 0;
-        }
-    }
-    as->pagetable[p1_bits][p2_bits][p3_bits] = paddr;
-
-    return 0;
-}
-
-/* Looks up physical address im page table.
- * Returns EINVAL if page table levels not linked.
- * Returns 0 if physical address is not in pte.
- */
-paddr_t lookup_pte(struct addrspace *as, vaddr_t vaddr) {
-    uint32_t p1_bits = get_first_level_bits(vaddr);
-    uint32_t p2_bits = get_second_level_bits(vaddr);
-    uint32_t p3_bits = get_third_level_bits(vaddr);
-
-    // Returns error if pagetable index is out of bounds.
-    if (p1_bits >= PAGETABLE_SIZE || p2_bits >= PAGETABLE_SIZE2 || p3_bits >= PAGETABLE_SIZE2) {
-        return ERANGE;
-    }
-
-    if (as->pagetable == NULL) {
-        return EINVAL;
-    }
-    if (as->pagetable[p1_bits] == NULL) {
-        return EINVAL;
-    }
-    if (as->pagetable[p1_bits][p2_bits] == NULL) {
-        return EINVAL;
-    }
-    if (as->pagetable[p1_bits][p2_bits][p3_bits] == 0) {
-        return -1;
-    }
-    return 0;
-
-}
-
-/* Updates page table entry with physical address
- * Returns 0 upon sucess.
- */
-int update_pte(struct addrspace *as, vaddr_t vaddr, paddr_t paddr) {
-    paddr_t ret = lookup_pte(as, vaddr);
-    if (ret == EINVAL) {
-        return EINVAL;
-    }
-    
-    uint32_t p1_bits = get_first_level_bits(vaddr);
-    uint32_t p2_bits = get_second_level_bits(vaddr);
-    uint32_t p3_bits = get_third_level_bits(vaddr);
-
-    as->pagetable[p1_bits][p2_bits][p3_bits] = paddr;
-    return 0;
 }
 
 
@@ -175,7 +65,6 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 
     struct addrspace *as = proc_getas();
     if (as == NULL) {
-
         return EFAULT;
     }
 
@@ -193,14 +82,13 @@ vm_fault(int faulttype, vaddr_t faultaddress)
         return ERANGE;
     }
 
+    // Check for valid region
     int res = lookup_region(as, faultaddress, faulttype); 
     if(res) {
-        // kfree(as_pagetable[p1_bits]);
-        // as_pagetable[p1_bits] = NULL;
-        // panic("%d", faultaddress);
         return res;
     }
 
+    // Look up Page Table
     if (as_pagetable[p1_bits] == NULL) {
         int res = lookup_region(as, faultaddress, faulttype); 
         if(res) {
@@ -212,15 +100,16 @@ vm_fault(int faulttype, vaddr_t faultaddress)
         if (result) return result;
         new = true;
     }
+    // Allocate frame
     if (as_pagetable[p1_bits][p2_bits] == NULL) {
-        as_pagetable[p1_bits][p2_bits] = (paddr_t*)kmalloc(sizeof(paddr_t) * PAGETABLE_SIZE2);
+        as_pagetable[p1_bits][p2_bits] = (paddr_t*)kmalloc(sizeof(paddr_t) * PAGETABLE_SIZE_2);
         if (as_pagetable[p1_bits][p2_bits] == NULL) {
             kfree(as_pagetable[p1_bits][p2_bits]);
             as_pagetable[p1_bits][p2_bits] = NULL;
             return ENOMEM;
         }
-        // memset(oldPTE[p1_bits][p2_bits], 0, sizeof(paddr_t)*PAGETABLE_SIZE2);
-        for (int i = 0; i < PAGETABLE_SIZE2; i++) {
+
+        for (int i = 0; i < PAGETABLE_SIZE_3; i++) {
             as_pagetable[p1_bits][p2_bits][i] = 0;
         }
     }
@@ -259,95 +148,10 @@ vm_fault(int faulttype, vaddr_t faultaddress)
             return result;
         }
     }
-
-    // int res = lookup_region(as, faultaddress, faulttype); 
-    // if(res) {
-    //     kfree(as_pagetable[p1_bits]);
-    //     as_pagetable[p1_bits] = NULL;
-    //     return res;
-    // }
-    // struct region *curr = as->as_regions;
-
-    // while(curr != NULL) {
-    //     if (faultaddress >= curr->vbase && (faultaddress - curr->vbase) < curr->sz) {
-    //         break;
-    //     }
-    //     curr = curr->next;
-    // }
-    // if (curr == NULL) {
-    //     int stack_size = 16 * PAGE_SIZE;
-    //     if (faultaddress < USERSTACK && faultaddress > (USERSTACK - stack_size)) {
-            
-    //     } else {
-    //         return EFAULT;
-    //     }
-    // }
-
-
-    // int result = 0;
-    // uint32_t dirty = 0;
-    // int flag = 0;
-    //  if (as->pagetable[p1_bits] == NULL) {
-    //     result = vm_initPT(as->pagetable, faultaddress);
-    //      if (result) {
-    //          return result;
-    //      }
-    //      flag = 1;
-    //  }
-
-    //  if (as->pagetable[p1_bits][p2_bits][p3_bits] == 0) {
-    //      struct region *oregion = as->as_regions;
-    //      while (oregion != NULL) {
-    //         if (faultaddress >= (oregion -> vbase + oregion -> sz) 
-    //             && faultaddress < oregion -> vbase) continue;
-    //         // READONLY
-    //         if (oregion -> writeable != 1) dirty = 0;
-    //         else dirty = TLBLO_DIRTY;
-    //         break;
-    //         oregion = oregion->next;
-    //      }
-    //      if (oregion == NULL) {
-    //          if (flag) {
-    //              kfree(as->pagetable[p1_bits][p2_bits]);
-    //              kfree(as->pagetable[p1_bits]);
-    //              as->pagetable[p1_bits][p2_bits] = NULL;
-    //              as->pagetable[p1_bits] = NULL;
-    //          } 
-    //          return EFAULT;
-    //      }
-
-    //      result = vm_addPTE(as->pagetable, faultaddress, dirty);
-    //      if (result) {
-    //          if (flag) {
-                 
-    //             kfree(as->pagetable[p1_bits][p2_bits]);
-    //             kfree(as->pagetable[p1_bits]);
-    //             as->pagetable[p1_bits][p2_bits] = NULL;
-    //             as->pagetable[p1_bits] = NULL;
-    //          } 
-    //          return result;
-    //      }
-    //  }
-    // vaddr_t newVaddr = alloc_kpages(1);
-    // if (newVaddr == 0) {
-    //     return ENOMEM;
-    // }
-    // bzero((void *) newVaddr, PAGE_SIZE); 
-    // paddr_t paddr = KVADDR_TO_PADDR(newVaddr) & PAGE_FRAME;
-    // struct region *oRegions = get_region(as, faultaddress);
-    // if (oRegions == NULL) return EFAULT;
-    // if (oRegions->writeable != 0) {
-    //     paddr = paddr | TLBLO_DIRTY;
-    // }
-    // int result = insert_pte(as, faultaddress, paddr | TLBLO_VALID);
-    // if (result != 0) {
-    //     return result;
-    // }
-    // // // Load tlb.
+    // Save into tlb
     int sql = splhigh();
     tlb_random(faultaddress & PAGE_FRAME, as_pagetable[p1_bits][p2_bits][p3_bits]);
     splx(sql);
-    // panic("%#08x", faultaddress);
     return 0;
     
 }
@@ -366,12 +170,13 @@ vm_tlbshootdown(const struct tlbshootdown *ts)
 
 void vm_freePTE(paddr_t ***pte)
 {
-    for (int i = 0; i < 128; i++) {
+    // page table is associated with KUSEG which will not have an entry 'higher' than pt[127][63][63]
+    for (int i = 0; i < (PAGETABLE_SIZE / 2); i++) { 
         if (pte[i] == NULL) continue;
 
-        for (int j = 0; j < 64; j ++) {
+        for (int j = 0; j < PAGETABLE_SIZE_2; j ++) {
 			if (pte[i][j] == NULL) continue;
-			for (int k = 0; k < 64; k++) {
+			for (int k = 0; k < PAGETABLE_SIZE_3; k++) {
 				if (pte[i][j][k] != 0) {
 					free_kpages(PADDR_TO_KVADDR(pte[i][j][k] & PAGE_FRAME));
 				} 
@@ -390,7 +195,6 @@ vaddr_t alloc_frame() {
     vaddr_t newVaddr = alloc_kpages(1);
 	if (newVaddr == 0) return 0;
 	/* zero out the frame */
-	//bzero((void *) newVaddr, regionSize);
     bzero((void *) newVaddr, PAGE_SIZE);
     return newVaddr;
 }
@@ -402,37 +206,29 @@ int copyPTE(struct addrspace *old, struct addrspace *newas) {
 		}
 		newas->pagetable[i] = kmalloc(sizeof(paddr_t) * PAGETABLE_SIZE);
 		if (newas->pagetable[i] == NULL) {
-			return ENOMEM;
+			return ENOMEM; // Out of memory
 		}
 
-		for (int j = 0; j < PAGETABLE_SIZE2; j++) {
+		for (int j = 0; j < PAGETABLE_SIZE_2; j++) {
 			if (old->pagetable[i][j] == NULL) {
 				continue;
 			} 
-			newas->pagetable[i][j] = kmalloc(sizeof(paddr_t) * PAGETABLE_SIZE2);
+			newas->pagetable[i][j] = kmalloc(sizeof(paddr_t) * PAGETABLE_SIZE_2);
 			if (newas->pagetable[i][j] == NULL) {
-				return ENOMEM;
+				return ENOMEM; // Out of memory
 			}
-			for (int k = 0; k < PAGETABLE_SIZE2; k++) {
-				if (old->pagetable[i][j][k]) {
+			for (int k = 0; k < PAGETABLE_SIZE_3; k++) {
+				if (old->pagetable[i][j][k]) { // Check if it is empty
 					vaddr_t newframe = alloc_frame();
 					if (newframe == 0) {
 						return ENOMEM; // Out of memory
 					}
-                    if (memmove((void *)newframe, (const void *)PADDR_TO_KVADDR(old->pagetable[i][j][k] & PAGE_FRAME), PAGE_SIZE) == NULL) {
+                    if (memmove((void *)newframe, (const void *)PADDR_TO_KVADDR(old->pagetable[i][j][k] & PAGE_FRAME)
+                    , PAGE_SIZE) == NULL) { // fail memove
                         vm_freePTE(newas->pagetable);
                         return ENOMEM;
                     }
                     newas->pagetable[i][j][k] = (KVADDR_TO_PADDR(newframe) & PAGE_FRAME) | (old->pagetable[i][j][k] & TLBLO_DIRTY) | TLBLO_VALID;
-					// bzero((void *)newframe, PAGE_SIZE);
-					// // copy bytes
-					// if (memmove((void *)newframe, (const void *)PADDR_TO_KVADDR(old->pagetable[i][j][k] & PAGE_FRAME)
-					// 	, PAGE_SIZE) == NULL) { // fail memmove()
-					// 	vm_freePTE(newas->pagetable);
-					// 	return ENOMEM; // Out of memory
-					// }
-					// newas->pagetable[i][j][k] = (KVADDR_TO_PADDR(newframe) & PAGE_FRAME) | 
-					// (TLBLO_DIRTY & old->pagetable[i][j][k]) | (TLBLO_VALID & old->pagetable[i][j][k]);
 				} else {
                     newas->pagetable[i][j][k] = 0;
 				}
@@ -443,31 +239,21 @@ int copyPTE(struct addrspace *old, struct addrspace *newas) {
     return 0;
 }
 
-
-int vm_initPT(paddr_t ***oldPTE, vaddr_t vaddr)
-{
+// Allocate 1st level entry
+int vm_initPT(paddr_t ***oldPTE, vaddr_t vaddr) {
     uint32_t p1_bits = get_first_level_bits(vaddr);
-    // uint32_t p2_bits = get_second_level_bits(vaddr);
     
-    oldPTE[p1_bits] = (paddr_t**)kmalloc(sizeof(paddr_t) * PAGETABLE_SIZE2);
+    oldPTE[p1_bits] = (paddr_t**)kmalloc(sizeof(paddr_t) * PAGETABLE_SIZE_2);
     if (oldPTE[p1_bits] == NULL) return ENOMEM;
 
-    for (int i = 0; i < PAGETABLE_SIZE2; i++) {
+    for (int i = 0; i < PAGETABLE_SIZE_2; i++) {
         oldPTE[p1_bits][i] = NULL;
     }
-    // oldPTE[p1_bits][p2_bits] = kmalloc(sizeof(paddr_t) * PAGETABLE_SIZE2);
-    // if (oldPTE[p1_bits][p2_bits] == NULL) {
-    //     return ENOMEM;
-    // }
-    // // memset(oldPTE[p1_bits][p2_bits], 0, sizeof(paddr_t)*PAGETABLE_SIZE2);
-    // for (int i = 0; i < PAGETABLE_SIZE2; i++) {
-    //     oldPTE[p1_bits][p2_bits][i] = 0;
-    // }
     return 0;
 }
 
-int vm_addPTE(paddr_t ***oldPTE, vaddr_t faultaddress, uint32_t dirty)
-{
+// Allocate the 3rd level entry 
+int vm_addPTE(paddr_t ***oldPTE, vaddr_t faultaddress, uint32_t dirty) {
     uint32_t p1_bits = get_first_level_bits(faultaddress);
     uint32_t p2_bits = get_second_level_bits(faultaddress);
     uint32_t p3_bits = get_third_level_bits(faultaddress);
@@ -477,48 +263,22 @@ int vm_addPTE(paddr_t ***oldPTE, vaddr_t faultaddress, uint32_t dirty)
     bzero((void *)PADDR_TO_KVADDR(pbase), PAGE_SIZE);
     
     oldPTE[p1_bits][p2_bits][p3_bits] = (pbase & PAGE_FRAME) | dirty | TLBLO_VALID;
-    // panic("vm: vm_addPTE DONE\n");
     return 0;
 }
 
-int probe_pt(struct addrspace *as, vaddr_t vaddr) {
-    uint32_t p1_bits = get_first_level_bits(vaddr);
-    uint32_t p2_bits = get_second_level_bits(vaddr);
-    uint32_t p3_bits = get_third_level_bits(vaddr);
-
-    if (p1_bits >= PAGETABLE_SIZE || p2_bits >= PAGETABLE_SIZE2 || p3_bits >= PAGETABLE_SIZE2) {
-        return ERANGE; //TODO: REPLACE with OUT OF RANGE
-    }
-    if (as->pagetable == NULL) {
-        return -1;
-    }
-    if (as->pagetable[p1_bits] == NULL) {
-        return -1;
-    }
-    if (as->pagetable[p1_bits][p2_bits] == NULL) {
-        return -1;
-    }
-
-    if (as->pagetable[p1_bits][p2_bits][p3_bits] == 0) {
-        return -1;
-    } 
-    return 0;
-}
-
+// finds the region where the faultaddress is located and checks if it is valid
 int lookup_region(struct addrspace *as, vaddr_t vaddr, int faulttype) {
     struct region *curr = as->as_regions;
     while(curr != NULL) {
-        if (vaddr >= curr->vbase &&
-            (vaddr < (curr->vbase + curr->sz))) {
+        if (vaddr >= curr->vbase && (vaddr < (curr->vbase + curr->sz))) {
             break;
         }
         curr = curr->next;
     }
 
-    if (curr == NULL)     return EFAULT; /* Cant find region thus return error */
+    if (curr == NULL) return EFAULT; /* Cant find region thus return error */
 
-    switch (faulttype)
-    {
+    switch (faulttype) {
         case VM_FAULT_WRITE:
             if (curr->writeable == 0) return EPERM;
             break;
